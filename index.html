@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>👶 Bébé Boubal — Le Grand Pronostic</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
 <style>
   :root {
     --cream: #fff5f7;
@@ -312,10 +312,21 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const SUPABASE_URL  = 'https://buafrtdxlgecqkklhxgm.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1YWZydGR4bGdlY3Fra2xoeGdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NTI0MTAsImV4cCI6MjA4OTEyODQxMH0.6RhzPeGaTGKLSg3PmkB59XsfXu3jtYfLAW_rgn93p3Q';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+// ══ STORAGE (localStorage) ══
+const KEY = 'boubal-v3';
+const ADMIN_KEY = 'boubal-admin-v3';
 const ADMIN_HASH = btoa('julien&doriane2026');
+
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || {entries:[]}; }
+  catch { return {entries:[]}; }
+}
+function saveData(d) { localStorage.setItem(KEY, JSON.stringify(d)); }
+function loadAdmin() {
+  try { return JSON.parse(localStorage.getItem(ADMIN_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveAdmin(d) { localStorage.setItem(ADMIN_KEY, JSON.stringify(d)); }
 
 // ══ NAVIGATION ══
 function showView(v) {
@@ -370,7 +381,7 @@ function buildParticipants(entries) {
 }
 
 // ══ SUBMIT ══
-async function submitPronostic() {
+function submitPronostic() {
   const pseudo=document.getElementById('f-pseudo').value.trim();
   const prenom=document.getElementById('f-prenom').value.trim();
   const date=document.querySelector('input[name="date"]:checked')?.value||'';
@@ -386,25 +397,19 @@ async function submitPronostic() {
   else document.getElementById('err-prenom').style.display='none';
   if(!valid)return;
 
-  const btn=document.getElementById('submit-btn');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Envoi…';
-
-  const {data:existing}=await sb.from('pronostics').select('id').ilike('pseudo',pseudo);
-  if(existing&&existing.length>0){
-    showToast(`${pseudo} a déjà déposé un pronostic ! 😄`);
-    btn.disabled=false; btn.innerHTML='✨ Déposer mon pronostic'; return;
+  const data=loadData();
+  if(data.entries.find(e=>e.pseudo.toLowerCase()===pseudo.toLowerCase())){
+    showToast(`${pseudo} a déjà déposé un pronostic ! 😄`); return;
   }
-
-  const {error}=await sb.from('pronostics').insert({pseudo,prenom,date_naissance:date,poids,heure,cheveux:hair,message});
-  if(error){showToast('Erreur lors de l\'envoi 😕 Réessayez.');console.error(error);}
-  else{
-    showToast(`Bravo ${pseudo} ! Pronostic enregistré 🎀`);
-    ['f-pseudo','f-prenom','f-message'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('f-poids').value='';
-    document.getElementById('f-heure').value='';
-    document.querySelectorAll('input[name="hair"]').forEach(r=>r.checked=false);
-  }
-  btn.disabled=false; btn.innerHTML='✨ Déposer mon pronostic';
+  data.entries.push({pseudo,prenom,date_naissance:date,poids,heure,cheveux:hair,message,ts:Date.now()});
+  saveData(data);
+  showToast(`Bravo ${pseudo} ! Pronostic enregistré 🎀`);
+  ['f-pseudo','f-prenom','f-message'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('f-poids').value='';
+  document.getElementById('f-heure').value='';
+  document.querySelectorAll('input[name="hair"]').forEach(r=>r.checked=false);
+  buildOdds(data.entries);
+  buildParticipants(data.entries);
 }
 
 // ══ ADMIN ══
@@ -416,15 +421,12 @@ function adminLogin() {
 }
 
 function buildAdminMessages(entries) {
-  const container = document.getElementById('admin-messages');
-  if (!container) return;
-  const withMessages = entries.filter(e => e.message && e.message.trim());
-  if (!withMessages.length) {
-    container.innerHTML = '<p style="color:var(--soft);font-style:italic;font-size:0.85rem;text-align:center;padding:16px 0">Aucun message pour l'instant…</p>';
-    return;
-  }
-  container.innerHTML = withMessages.map(e => `
-    <div style="border-bottom:1px solid rgba(232,120,154,0.1);padding:14px 0;animation:fadeIn 0.4s ease">
+  const container=document.getElementById('admin-messages');
+  if(!container)return;
+  const withMessages=entries.filter(e=>e.message&&e.message.trim());
+  if(!withMessages.length){container.innerHTML='<p style="color:var(--soft);font-style:italic;font-size:0.85rem;text-align:center;padding:16px 0">Aucun message pour l'instant…</p>';return;}
+  container.innerHTML=withMessages.map(e=>`
+    <div style="border-bottom:1px solid rgba(232,120,154,0.1);padding:14px 0">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#e8789a,#f7a8c0);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:0.85rem;font-weight:700;color:white;flex-shrink:0">${e.pseudo.slice(0,2).toUpperCase()}</div>
         <span style="font-weight:600;font-size:0.9rem;color:var(--deep)">${e.pseudo}</span>
@@ -433,46 +435,47 @@ function buildAdminMessages(entries) {
       <p style="font-size:0.9rem;color:var(--mid);font-style:italic;padding-left:42px;line-height:1.5">"${e.message}"</p>
     </div>
   `).join('');
-  // Remove last border
-  const items = container.querySelectorAll('div[style*="border-bottom"]');
-  if (items.length) items[items.length-1].style.borderBottom = 'none';
 }
 
-async function refreshAdminDashboard() {
-  const {data:rows}=await sb.from('config').select('key,value');
-  const config={};rows?.forEach(r=>config[r.key]=r.value);
-  document.getElementById('admin-prenom-status').textContent=config.actual_name||'—';
-  if(config.actual_name) document.getElementById('admin-prenom-input').value=config.actual_name;
-  if(config.revealed==='true'){
+function refreshAdminDashboard() {
+  const admin=loadAdmin();
+  const data=loadData();
+  document.getElementById('admin-prenom-status').textContent=admin.actualName||'—';
+  if(admin.actualName) document.getElementById('admin-prenom-input').value=admin.actualName;
+  if(admin.revealed){
     document.getElementById('reveal-status-badge').style.display='block';
     const btn=document.getElementById('reveal-btn');
     btn.disabled=true; btn.style.opacity='0.4';
   }
-  const {data:allEntries,count}=await sb.from('pronostics').select('*',{count:'exact'}).order('created_at',{ascending:true});
-  document.getElementById('admin-stats').textContent=count||0;
-  buildAdminMessages(allEntries||[]);
+  document.getElementById('admin-stats').textContent=data.entries.length;
+  buildAdminMessages(data.entries);
 }
 
-async function saveAdminPrenom() {
+function saveAdminPrenom() {
   const name=document.getElementById('admin-prenom-input').value.trim();
   if(!name){showToast('Entre un prénom !');return;}
-  const{error}=await sb.from('config').upsert({key:'actual_name',value:name});
-  if(error){showToast('Erreur lors de l\'enregistrement');return;}
+  const admin=loadAdmin();
+  admin.actualName=name;
+  saveAdmin(admin);
   document.getElementById('admin-prenom-status').textContent=name;
   showToast(`Prénom "${name}" enregistré 🎀`);
 }
 
-async function triggerReveal() {
-  const name=document.getElementById('admin-prenom-status').textContent;
-  if(name==='—'||!name){showToast('Enregistre d\'abord le prénom du bébé !');return;}
-  if(!confirm(`Révéler les résultats à toute la famille ?\n\nLe prénom "${name}" va être dévoilé à tous instantanément !`))return;
-  const btn=document.getElementById('reveal-btn');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Révélation en cours…';
-  const{error}=await sb.from('config').upsert({key:'revealed',value:'true'});
-  if(error){showToast('Erreur 😕');btn.disabled=false;btn.innerHTML='🎊 Révéler les résultats à tous !';return;}
+function triggerReveal() {
+  const admin=loadAdmin();
+  if(!admin.actualName){showToast('Enregistre d'abord le prénom du bébé !');return;}
+  if(!confirm(`Révéler les résultats ?
+
+Le prénom "${admin.actualName}" sera dévoilé !`))return;
+  admin.revealed=true;
+  saveAdmin(admin);
   document.getElementById('reveal-status-badge').style.display='block';
-  btn.style.opacity='0.4';
-  showToast('🎊 Révélation déclenchée ! Tout le monde voit les résultats !');
+  const btn=document.getElementById('reveal-btn');
+  btn.disabled=true; btn.style.opacity='0.4';
+  showToast('🎊 Révélation enregistrée !');
+  const data=loadData();
+  showView('results');
+  buildScoreboard(data.entries, admin.actualName);
 }
 
 // ══ SCORING ══
@@ -514,29 +517,6 @@ function buildScoreboard(entries,actualName){
   });
 }
 
-// ══ REALTIME ══
-function subscribeRealtime(){
-  sb.channel('pronostics-live')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'pronostics'},async()=>{
-      const{data}=await sb.from('pronostics').select('*').order('created_at',{ascending:true});
-      buildOdds(data||[]); buildParticipants(data||[]);
-    }).subscribe();
-
-  sb.channel('config-live')
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'config'},async(payload)=>{
-      if(payload.new?.key==='revealed'&&payload.new?.value==='true'){
-        const[{data:entries},{data:rows}]=await Promise.all([
-          sb.from('pronostics').select('*').order('created_at'),
-          sb.from('config').select('key,value')
-        ]);
-        const config={};rows?.forEach(r=>config[r.key]=r.value);
-        showView('results');
-        buildScoreboard(entries||[],config.actual_name||'');
-        showToast('🎊 Le prénom est révélé !');
-      }
-    }).subscribe();
-}
-
 // ══ TOAST ══
 function showToast(msg){
   const t=document.getElementById('toast');
@@ -545,39 +525,18 @@ function showToast(msg){
 }
 
 // ══ INIT ══
-async function init(){
+function init(){
   updateCountdown();
   setInterval(updateCountdown,1000);
-
-  // Timeout de securite : si Supabase met trop de temps, on affiche quand meme la page
-  const timeout = setTimeout(() => {
-    document.getElementById('loading-overlay').style.display='none';
-    showView(window.location.hash==='#admin-julien-doriane'?'admin':'main');
-  }, 5000);
-
-  try {
-    const[{data:entries},{data:rows}]=await Promise.all([
-      sb.from('pronostics').select('*').order('created_at',{ascending:true}),
-      sb.from('config').select('key,value')
-    ]);
-    clearTimeout(timeout);
-    const config={};rows?.forEach(r=>config[r.key]=r.value);
-
-    document.getElementById('loading-overlay').style.display='none';
-
-    if(config.revealed==='true'){
-      showView('results');
-      buildScoreboard(entries||[],config.actual_name||''  );
-    } else {
-      buildOdds(entries||[]);
-      buildParticipants(entries||[]);
-      showView(window.location.hash==='#admin-julien-doriane'?'admin':'main');
-    }
-    subscribeRealtime();
-  } catch(e) {
-    clearTimeout(timeout);
-    console.error('Erreur Supabase:', e);
-    document.getElementById('loading-overlay').style.display='none';
+  document.getElementById('loading-overlay').style.display='none';
+  const data=loadData();
+  const admin=loadAdmin();
+  if(admin.revealed){
+    showView('results');
+    buildScoreboard(data.entries, admin.actualName||'');
+  } else {
+    buildOdds(data.entries);
+    buildParticipants(data.entries);
     showView(window.location.hash==='#admin-julien-doriane'?'admin':'main');
   }
 }
